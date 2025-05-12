@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedCheck - Em Construção / Under Construction</title>
+    <style>
+        /* --- Configuração --- */
+        :root {
+            --dark-blue: #003F7F;
+            --light-blue: #4CACEE;
+            --grey: #d8d8d8;
+            --bg-color: #f7f7f7;
+            --text-color: #333;
+            --symbol-color: rgba(0, 63, 127, 0.35); /* Slightly less transparent symbols */
+            --particle-bg-color: rgba(216, 216, 216, 0.4); /* Slightly less transparent bg particles */
+        }
+
+        /* --- Reset & Base --- */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html, body {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            position: relative;
+            /* --- IMPORTANTE: Esconde o cursor padrão do sistema --- */
+            cursor: none;
+        }
+
+        /* --- Canvas para Efeitos --- */
+        #effects-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            /* pointer-events: none;  <- REMOVED, now canvas IS the cursor interaction layer visually */
+        }
+
+        /* --- Contentor do Conteúdo --- */
+        .container {
+            position: relative;
+            z-index: 1; /* Ensure content is above canvas effects visually */
+            pointer-events: auto; /* Allow interaction with content inside container */
+            padding: 25px 30px;
+            max-width: 600px;
+            width: 90%;
+            background-color: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(3px);
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 63, 127, 0.1);
+        }
+
+        /* --- Logo --- */
+        #logo-image {
+             max-width: 250px;
+             height: auto;
+             display: block;
+             margin: 0 auto 30px auto;
+         }
+
+        /* --- Texto de Status --- */
+        .status-text {
+            font-size: 1.6em;
+            font-weight: 300;
+            color: var(--dark-blue);
+            margin-bottom: 35px;
+            line-height: 1.4;
+        }
+
+        /* --- Marquee / Texto Rolante --- */
+        .marquee-container {
+            width: 100%;
+            overflow: hidden;
+            background-color: rgba(216, 216, 216, 0.6);
+            padding: 12px 0;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+
+        .marquee-text {
+            display: inline-block;
+            white-space: nowrap;
+            color: var(--dark-blue);
+            font-weight: 500;
+            font-size: 1.1em;
+            animation: marquee 25s linear infinite;
+            padding-left: 100%;
+        }
+
+        @keyframes marquee {
+            0% { transform: translateX(0%); }
+            100% { transform: translateX(-100%); }
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Canvas para Efeitos de Fundo e Cursor Personalizado -->
+    <canvas id="effects-canvas"></canvas>
+
+    <!-- Conteúdo Principal -->
+    <div class="container">
+        <!-- IMPORTANTE: Substitua pelo caminho real para o seu ficheiro de logo COMPLETO -->
+        <img id="logo-image" src="Medcheck.jpg" alt="MedCheck Logo">
+
+        <p class="status-text">
+            O nosso site está em construção.<br>
+            Our website is currently under construction.
+        </p>
+
+        <div class="marquee-container">
+            <div class="marquee-text">
+                    :: Novidades em breve! :: Exciting things are coming soon! :: Fique atento às atualizações. :: Stay tuned for updates. :: A sua referência em análises clínicas. :: Your reference in clinical analysis. ::    
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const canvas = document.getElementById('effects-canvas');
+        const ctx = canvas.getContext('2d');
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        // Cores do CSS
+        const lightBlue = getComputedStyle(document.documentElement).getPropertyValue('--light-blue').trim() || '#4CACEE';
+        const symbolColor = getComputedStyle(document.documentElement).getPropertyValue('--symbol-color').trim() || 'rgba(0, 63, 127, 0.4)';
+        const bgParticleColor = getComputedStyle(document.documentElement).getPropertyValue('--particle-bg-color').trim() || 'rgba(216, 216, 216, 0.5)';
+        const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--bg-color').trim() || '#f7f7f7';
+
+        let mouseX = width / 2;
+        let mouseY = height / 2;
+        let mouseParticles = [];
+        let labSymbols = [];
+        let backgroundParticles = [];
+
+        const SYMBOLS = ['🧪', '🧬', '🩸', '⚗️', '🦠', '💊', '🔬']; // Added microscope to symbols list
+
+        // --- Configurações do Logo Idle ---
+        let idleTimer;
+        let isIdle = false;
+        const idleTimeoutDuration = 500; // Slightly faster transition to idle logo
+        // IMPORTANTE: Caminho para o SÍMBOLO (só microscópio) para o efeito idle
+        const logoSymbolPath = "microscope_symbol.png";
+        const logoSymbol = new Image();
+        logoSymbol.src = logoSymbolPath;
+        let logoLoaded = false;
+        let logoAlpha = 0;
+        let logoScale = 0.5; // Initial scale when appearing
+        const targetLogoScale = 0.75; // Final scale (slightly smaller than before)
+        const logoAppearSpeed = 0.08; // Faster fade in
+        const logoFadeSpeed = 0.12; // Faster fade out
+        let logoX = 0;
+        let logoY = 0;
+
+        logoSymbol.onload = () => { logoLoaded = true; };
+        logoSymbol.onerror = () => { console.error("Falha ao carregar a imagem do símbolo do logo:", logoSymbolPath); }
+
+        // --- Classes ---
+
+        class Particle {
+            constructor(x, y, type = 'mouse') {
+                this.x = x;
+                this.y = y;
+                this.type = type;
+
+                if (this.type === 'mouse') {
+                    this.size = Math.random() * 4 + 1.5;
+                    this.speedX = Math.random() * 2 - 1;
+                    this.speedY = Math.random() * 2 - 1;
+                    this.opacity = 1;
+                    this.color = lightBlue;
+                    this.decay = 0.04; // Faster fade for mouse trail
+                    this.shrink = 0.05;
+                } else { // Background
+                    this.size = Math.random() * 2 + 1;
+                    this.speedX = Math.random() * 0.4 - 0.2;
+                    this.speedY = Math.random() * 0.4 - 0.2;
+                    this.opacity = Math.random() * 0.5 + 0.1;
+                    this.color = bgParticleColor;
+                    this.decay = 0.002;
+                    this.shrink = 0;
+                }
+            }
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                this.opacity -= this.decay;
+                if (this.size > 0.2 && this.shrink > 0) this.size -= this.shrink;
+
+                if (this.type === 'background') {
+                    if (this.x < -this.size || this.x > width + this.size || this.y < -this.size || this.y > height + this.size) {
+                         if (this.opacity < 0.05) {
+                            this.x = Math.random() * width;
+                            this.y = Math.random() * height;
+                            this.opacity = Math.random() * 0.5 + 0.1;
+                            this.speedX = Math.random() * 0.4 - 0.2;
+                            this.speedY = Math.random() * 0.4 - 0.2;
+                         }
+                    }
+                     this.speedX += (Math.random() - 0.5) * 0.05;
+                     this.speedY += (Math.random() - 0.5) * 0.05;
+                     this.speedX = Math.max(-0.3, Math.min(0.3, this.speedX));
+                     this.speedY = Math.max(-0.3, Math.min(0.3, this.speedY));
+                }
+            }
+            draw() {
+                if (this.opacity > 0 && this.size > 0.2) {
+                    ctx.fillStyle = this.type === 'mouse' ? `rgba(${hexToRgb(this.color).r}, ${hexToRgb(this.color).g}, ${hexToRgb(this.color).b}, ${this.opacity})` : this.color;
+                     ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        class LabSymbol {
+            constructor() {
+                this.symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
+                this.fontSize = Math.random() * 18 + 12; // Slightly larger range: 12-30px
+                this.x = Math.random() * width;
+                this.y = height + this.fontSize;
+                this.speedY = -(Math.random() * 1.0 + 0.3);
+                this.speedX = Math.random() * 0.8 - 0.4;
+                this.opacity = Math.random() * 0.4 + 0.2; // Range 0.2 to 0.6
+                this.color = symbolColor;
+                this.rotation = Math.random() * Math.PI * 2; // Start rotation
+                this.rotationSpeed = (Math.random() - 0.5) * 0.01; // Slow rotation speed
+            }
+            update() {
+                this.y += this.speedY;
+                this.x += this.speedX;
+                this.rotation += this.rotationSpeed;
+                if (this.y < -this.fontSize * 2) {
+                   this.reset();
+                }
+            }
+             reset() {
+                 this.symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
+                 this.fontSize = Math.random() * 18 + 12;
+                 this.x = Math.random() * width;
+                 this.y = height + this.fontSize;
+                 this.speedY = -(Math.random() * 1.0 + 0.3);
+                 this.speedX = Math.random() * 0.8 - 0.4;
+                 this.opacity = Math.random() * 0.4 + 0.2;
+                 this.rotation = Math.random() * Math.PI * 2;
+                 this.rotationSpeed = (Math.random() - 0.5) * 0.01;
+             }
+            draw() {
+                ctx.save(); // Save context state
+                ctx.translate(this.x, this.y); // Move origin to symbol position
+                ctx.rotate(this.rotation); // Apply rotation
+                ctx.font = `${this.fontSize}px Arial`;
+                ctx.fillStyle = this.color;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.globalAlpha = this.opacity;
+                ctx.fillText(this.symbol, 0, 0); // Draw at the new (0,0) origin
+                ctx.restore(); // Restore context state (removes translation, rotation, globalAlpha)
+            }
+        }
+
+        function hexToRgb(hex) {
+            var shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+            hex = hex.replace(shorthandRegex, (m, r, g, b) => r + r + g + g + b + b);
+            var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : { r: 76, g: 172, b: 238 }; // Fallback
+        }
+
+        // --- Inicialização ---
+        function init() {
+            // Background particles
+            for (let i = 0; i < 40; i++) {
+                backgroundParticles.push(new Particle(Math.random() * width, Math.random() * height, 'background'));
+            }
+            // Lab symbols (Increased number)
+            for (let i = 0; i < 45; i++) { // <<< Increased number of symbols
+                 labSymbols.push(new LabSymbol());
+            }
+
+             clearTimeout(idleTimer);
+             idleTimer = setTimeout(() => {
+                 isIdle = true;
+                 logoX = mouseX; // Use current mouse position for initial idle
+                 logoY = mouseY;
+                 logoScale = 0.5;
+             }, idleTimeoutDuration * 2); // Longer initial timeout
+
+             animate();
+        }
+
+
+        // --- Loop de Animação ---
+        function animate() {
+            // Clear canvas
+            ctx.fillStyle = `rgba(${hexToRgb(bgColor).r}, ${hexToRgb(bgColor).g}, ${hexToRgb(bgColor).b}, 0.25)`;
+            ctx.fillRect(0, 0, width, height);
+
+            // --- Draw Background Elements FIRST ---
+            backgroundParticles.forEach(p => { p.update(); p.draw(); });
+            labSymbols.forEach(s => { s.update(); s.draw(); });
+
+            // --- Draw Cursor Elements LAST (on top) ---
+
+            // Update and draw mouse trail particles
+            mouseParticles.forEach(p => { p.update(); p.draw(); });
+            mouseParticles = mouseParticles.filter(p => p.opacity > 0 && p.size > 0.2);
+
+            // Update logo alpha/scale based on idle state
+            if (isIdle) {
+                if (logoAlpha < 1) logoAlpha += logoAppearSpeed;
+                if (logoScale < targetLogoScale) logoScale += (targetLogoScale - logoScale) * 0.1; // Ease in scale
+                if (logoAlpha > 1) logoAlpha = 1;
+            } else {
+                if (logoAlpha > 0) logoAlpha -= logoFadeSpeed;
+                if (logoAlpha < 0) logoAlpha = 0;
+                 // Reset scale faster when moving away
+                 if (logoScale > 0.5) logoScale -= (logoScale - 0.5) * 0.2;
+                 if (logoScale < 0.5) logoScale = 0.5;
+            }
+
+            // Draw idle logo symbol (acts as cursor when idle)
+            if (logoLoaded && logoAlpha > 0) {
+                ctx.save();
+                ctx.globalAlpha = logoAlpha; // Apply fade effect
+                const imgWidth = logoSymbol.width * logoScale;
+                const imgHeight = logoSymbol.height * logoScale;
+                // Center the logo exactly where the mouse stopped (logoX, logoY)
+                ctx.drawImage(logoSymbol, logoX - imgWidth / 2, logoY - imgHeight / 2, imgWidth, imgHeight);
+                ctx.restore();
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        // --- Event Listeners ---
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            // Optional: reset background elements on resize
+            // backgroundParticles = [];
+            // labSymbols = [];
+            // init(); // Or just reposition existing ones
+        });
+
+        window.addEventListener('mousemove', (event) => {
+            mouseX = event.clientX;
+            mouseY = event.clientY;
+
+            // Mouse is moving:
+            if (isIdle) {
+                isIdle = false; // Set state to not idle
+            }
+
+            // Create particle trail only when moving
+             if (mouseParticles.length < 80) { // Limit trail length
+                 // Add more particles for a denser trail
+                 for(let i = 0; i < 2; i++) {
+                     mouseParticles.push(new Particle(mouseX, mouseY, 'mouse'));
+                 }
+             }
+
+            // Reset idle timer on every move
+            clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => {
+                // Timer expired: Mouse is now idle
+                isIdle = true;
+                logoX = mouseX; // Store final position for the logo
+                logoY = mouseY;
+                logoScale = 0.5; // Reset scale for fade-in effect
+                // Optional: Clear remaining mouse particles faster when idle starts
+                // mouseParticles = mouseParticles.filter(p => p.opacity > 0.5); // Example
+            }, idleTimeoutDuration);
+        });
+
+        // --- Iniciar tudo ---
+        init();
+
+    </script>
+
+</body>
+</html>
